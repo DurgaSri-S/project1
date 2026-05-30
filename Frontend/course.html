@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusTech | Course Details</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .section-header { margin-top: 3rem; margin-bottom: 1rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 0.5rem; }
+        .list-item { background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; }
+        .file-upload { display: flex; gap: 1rem; align-items: center; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="logo">NexusTech</a>
+        <nav>
+            <a href="/">Courses</a>
+            <a href="/login.html" id="nav-login" class="hidden">Sign In</a>
+            <a href="/login.html?mode=register" id="nav-register" class="hidden">Register</a>
+            <a href="/dashboard.html" id="nav-dashboard" class="hidden">My Dashboard</a>
+            <a href="/tutor.html" id="nav-tutor" class="hidden">Tutor Portal</a>
+            <a href="/admin.html" id="nav-admin" class="hidden">Admin Portal</a>
+            <a href="#" id="nav-logout" class="hidden">Log Out</a>
+        </nav>
+    </header>
+
+    <div class="container animate-slide-up">
+        <div class="glass-panel mb-1" id="course-header">
+            <h1 id="c-title">Loading Course...</h1>
+            <p class="text-muted" id="c-instructor"></p>
+            <p id="c-desc" class="mt-1"></p>
+        </div>
+
+        <div class="grid" style="grid-template-columns: 1fr 1fr;">
+            <!-- Materials Section -->
+            <div class="glass-panel">
+                <h2 class="mb-1">Course Materials</h2>
+                <div id="materials-list">
+                    <p class="text-muted">Loading materials...</p>
+                </div>
+                
+                <form id="upload-material-form" class="mt-2 hidden" style="border-top: 1px solid var(--glass-border); padding-top: 1rem;">
+                    <h3>Upload Material</h3>
+                    <div class="form-group mb-1">
+                        <input type="text" id="mat-title" placeholder="Material Title" required>
+                    </div>
+                    <div class="file-upload">
+                        <input type="file" id="mat-file" required>
+                        <button type="submit" class="btn" id="mat-btn">Upload</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Assignments Section -->
+            <div class="glass-panel">
+                <h2 class="mb-1">Assignments</h2>
+                <div id="assignments-list">
+                    <p class="text-muted">Loading assignments...</p>
+                </div>
+                
+                <form id="create-assignment-form" class="mt-2 hidden" style="border-top: 1px solid var(--glass-border); padding-top: 1rem;">
+                    <h3>Create Assignment</h3>
+                    <div class="form-group mb-1">
+                        <input type="text" id="ass-title" placeholder="Assignment Title" required>
+                    </div>
+                    <div class="form-group mb-1">
+                        <textarea id="ass-desc" placeholder="Instructions..." required rows="3"></textarea>
+                    </div>
+                    <div class="form-group mb-1">
+                        <label>Due Date</label>
+                        <input type="datetime-local" id="ass-due">
+                    </div>
+                    <div class="file-upload">
+                        <input type="file" id="ass-file">
+                        <button type="submit" class="btn" id="ass-btn">Create</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Submissions Viewer Modal (For Tutors) -->
+    <div id="submissions-modal" class="hidden" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10000; display:flex; align-items:center; justify-content:center;">
+        <div class="glass-panel" style="width:90%; max-width:800px; max-height: 80vh; overflow-y: auto; position: relative;">
+            <h2>Submissions for Assignment</h2>
+            <button onclick="document.getElementById('submissions-modal').classList.add('hidden')" class="btn btn-secondary mb-1" style="position: sticky; top: 0; float: right; z-index: 10;">Close</button>
+            <table id="subs-table" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th>Student ID</th>
+                        <th>Date</th>
+                        <th>File</th>
+                        <th>Grade</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="subs-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/main.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            await checkAuth();
+            if (!currentUser) {
+                window.location.href = '/login.html';
+                return;
+            }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const courseId = urlParams.get('id');
+            if(!courseId) {
+                window.location.href = '/';
+                return;
+            }
+
+            let course;
+            try {
+                course = await api.courses.getOne(courseId);
+                document.getElementById('c-title').textContent = course.title;
+                document.getElementById('c-instructor').textContent = `Instructor: ${course.instructor}`;
+                document.getElementById('c-desc').textContent = course.description;
+            } catch(e) {
+                document.getElementById('c-title').textContent = 'Course Not Found / Unauthorized';
+                return;
+            }
+
+            const isTutor = (currentUser.role === 'admin' || (currentUser.role === 'tutor' && course.owner_id === currentUser.id));
+
+            if (isTutor) {
+                document.getElementById('upload-material-form').classList.remove('hidden');
+                document.getElementById('create-assignment-form').classList.remove('hidden');
+            }
+
+            // LOAD MATERIALS
+            const loadMaterials = async () => {
+                const list = document.getElementById('materials-list');
+                try {
+                    const materials = await api.materials.getForCourse(courseId);
+                    list.innerHTML = '';
+                    if(materials.length === 0) list.innerHTML = '<p class="text-muted">No materials posted yet.</p>';
+                    materials.forEach(m => {
+                        list.innerHTML += `
+                            <div class="list-item">
+                                <h4>${m.title}</h4>
+                                <a href="${m.file_path}" target="_blank" style="color:var(--accent);">Download File</a>
+                            </div>
+                        `;
+                    });
+                } catch(e) { list.innerHTML = '<p class="text-danger">Failed to load materials.</p>'; }
+            };
+
+            // LOAD ASSIGNMENTS
+            const loadAssignments = async () => {
+                const list = document.getElementById('assignments-list');
+                try {
+                    const assigns = await api.assignments.getForCourse(courseId);
+                    list.innerHTML = '';
+                    if(assigns.length === 0) list.innerHTML = '<p class="text-muted">No assignments posted yet.</p>';
+                    
+                    for (let a of assigns) {
+                        let innerHtml = `
+                            <div class="list-item">
+                                <h4>${a.title}</h4>
+                                <p style="font-size:0.9rem; margin-bottom:0.5rem;">${a.description}</p>
+                                ${a.file_path ? `<a href="${a.file_path}" target="_blank" style="color:var(--accent); font-size:0.9rem;">View Attachment</a><br>` : ''}
+                                ${a.due_date ? `<small class="text-muted">Due: ${new Date(a.due_date).toLocaleString()}</small>` : ''}
+                        `;
+                        
+                        if(isTutor) {
+                            innerHtml += `<div class="mt-1"><button class="btn btn-secondary view-subs" data-id="${a.id}" style="padding:0.3rem 0.6rem; font-size:0.8rem;">View Submissions</button></div>`;
+                        } else if(currentUser.role === 'student') {
+                            // Check if student already submitted (would need API endpoint, let's just let them submit/resubmit)
+                            innerHtml += `
+                                <div class="mt-1" style="border-top:1px solid rgba(255,255,255,0.1); padding-top:0.5rem;">
+                                    <strong>Submit Assignment</strong>
+                                    <div class="file-upload">
+                                        <input type="file" id="sub-file-${a.id}">
+                                        <button class="btn submit-ass" data-id="${a.id}" style="padding:0.3rem 0.6rem; font-size:0.8rem;">Upload</button>
+                                    </div>
+                                </div>
+                            `;
+                        }
+
+                        innerHtml += `</div>`;
+                        list.innerHTML += innerHtml;
+                    }
+
+                    // Attach events for submissions
+                    if(currentUser.role === 'student') {
+                        document.querySelectorAll('.submit-ass').forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                const id = e.target.getAttribute('data-id');
+                                const fileInput = document.getElementById(`sub-file-${id}`);
+                                if(!fileInput.files[0]) return showToast('Please select a file', 'error');
+                                
+                                try {
+                                    e.target.disabled = true;
+                                    await api.submissions.create(id, fileInput.files[0]);
+                                    showToast('Successfully submitted!', 'success');
+                                    fileInput.value = "";
+                                } catch(err) {
+                                    showToast(err.message, 'error');
+                                } finally {
+                                    e.target.disabled = false;
+                                }
+                            });
+                        });
+                    } else if(isTutor) {
+                        document.querySelectorAll('.view-subs').forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                const id = e.target.getAttribute('data-id');
+                                await loadSubmissionsModal(id);
+                            });
+                        });
+                    }
+
+                } catch(e) { list.innerHTML = '<p class="text-danger">Failed to load assignments.</p>'; }
+            };
+
+            await Promise.all([loadMaterials(), loadAssignments()]);
+
+            // Form handlers for Tutor
+            if (isTutor) {
+                document.getElementById('upload-material-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const btn = document.getElementById('mat-btn');
+                    btn.disabled = true;
+                    try {
+                        const title = document.getElementById('mat-title').value;
+                        const file = document.getElementById('mat-file').files[0];
+                        await api.materials.upload(courseId, title, file);
+                        showToast('Material Uploaded', 'success');
+                        e.target.reset();
+                        await loadMaterials();
+                    } catch(err) { showToast(err.message, 'error'); }
+                    finally { btn.disabled = false; }
+                });
+
+                document.getElementById('create-assignment-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const btn = document.getElementById('ass-btn');
+                    btn.disabled = true;
+                    try {
+                        const title = document.getElementById('ass-title').value;
+                        const desc = document.getElementById('ass-desc').value;
+                        const due = document.getElementById('ass-due').value;
+                        const file = document.getElementById('ass-file').files[0];
+                        
+                        // Parse local datetime to ISO if exists, otherwise pass null
+                        const dueIso = due ? new Date(due).toISOString() : null;
+
+                        await api.assignments.create(courseId, title, desc, dueIso, file);
+                        showToast('Assignment Created', 'success');
+                        e.target.reset();
+                        await loadAssignments();
+                    } catch(err) { showToast(err.message, 'error'); }
+                    finally { btn.disabled = false; }
+                });
+            }
+
+            // Submissions viewer
+            const loadSubmissionsModal = async (assignId) => {
+                const modal = document.getElementById('submissions-modal');
+                const tbody = document.getElementById('subs-body');
+                tbody.innerHTML = '<tr><td colspan="5">Loading...</td></tr>';
+                modal.classList.remove('hidden');
+
+                try {
+                    const subs = await api.submissions.getForAssignment(assignId);
+                    tbody.innerHTML = '';
+                    if(subs.length === 0) return tbody.innerHTML = '<tr><td colspan="5">No submissions yet</td></tr>';
+                    
+                    subs.forEach(s => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>${s.student_id}</td>
+                            <td>${new Date(s.submission_date).toLocaleString()}</td>
+                            <td><a href="${s.file_path}" target="_blank" style="color:var(--accent)">Download</a></td>
+                            <td id="grade-cell-${s.id}">${s.grade || 'Not Graded'}</td>
+                            <td>
+                                <input type="text" id="grade-input-${s.id}" placeholder="e.g. A, 90/100" style="width:100px; padding:0.2rem;" value="${s.grade || ''}">
+                                <button class="btn btn-secondary grade-btn" data-id="${s.id}" style="padding:0.2rem 0.5rem; font-size:0.8rem;">Save</button>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+
+                    document.querySelectorAll('.grade-btn').forEach(btn => {
+                        btn.addEventListener('click', async (e) => {
+                            const id = e.target.getAttribute('data-id');
+                            const val = document.getElementById(`grade-input-${id}`).value;
+                            try {
+                                e.target.disabled = true;
+                                await api.submissions.grade(id, val, "Graded by tutor");
+                                document.getElementById(`grade-cell-${id}`).textContent = val;
+                                showToast('Grade saved!', 'success');
+                            } catch(err) { showToast(err.message, 'error'); }
+                            finally { e.target.disabled = false; }
+                        });
+                    });
+
+                } catch (e) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-danger">Failed to load</td></tr>';
+                }
+            };
+
+        });
+    </script>
+</body>
+</html>

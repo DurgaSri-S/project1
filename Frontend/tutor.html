@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusTech | Tutor Portal</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .tutor-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 2rem;
+        }
+        @media (max-width: 768px) {
+            .tutor-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="logo">NexusTech Tutor</a>
+        <nav>
+            <a href="/">View Site</a>
+            <a href="/dashboard.html" id="nav-dashboard" class="hidden">My Dashboard</a>
+            <a href="/tutor.html" id="nav-tutor" class="hidden">Tutor Portal</a>
+            <a href="/admin.html" id="nav-admin" class="hidden">Admin Portal</a>
+            <a href="#" id="nav-logout" class="hidden">Log Out</a>
+        </nav>
+    </header>
+
+    <div class="container animate-slide-up">
+        <div class="glass-panel text-center mb-1">
+            <h1>Tutor Dashboard</h1>
+            <p class="text-muted">Manage your courses, assignments, and students</p>
+        </div>
+
+        <div class="tutor-grid">
+            <!-- Create Course Form -->
+            <div class="glass-panel" id="create-course-container">
+                <h2 class="mb-1">Create Course</h2>
+                <form id="create-course-form">
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" id="course-title" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Instructor Name Override</label>
+                        <input type="text" id="course-instructor" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Duration (e.g. '8 weeks')</label>
+                        <input type="text" id="course-duration" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Price ($)</label>
+                        <input type="number" step="0.01" id="course-price" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="course-desc" required></textarea>
+                    </div>
+                    <button type="submit" class="btn" style="width: 100%" id="submit-course">Publish Course</button>
+                </form>
+            </div>
+
+            <!-- My Courses -->
+            <div class="glass-panel">
+                <h2 class="mb-1">My Hosted Courses</h2>
+                <div class="grid" id="my-courses-list" style="grid-template-columns: 1fr;">
+                    <p class="text-center w-100">Loading your courses...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/main.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            await checkAuth();
+            if (!currentUser || (currentUser.role !== 'tutor' && currentUser.role !== 'admin')) {
+                showToast('Unauthorized access', 'error');
+                setTimeout(() => window.location.href = '/', 1500);
+                return;
+            }
+
+            // Verification Check for Tutors
+            if (currentUser.role === 'tutor' && currentUser.verification_status !== 'approved') {
+                const container = document.getElementById('create-course-container');
+                container.innerHTML = `
+                    <h2 class="mb-1">Create Course</h2>
+                    <div class="alert alert-info">
+                        <p><strong>Verification Pending</strong></p>
+                        <p>Your tutor account is currently being reviewed by our administrators. You will be able to create and publish courses once your profile is approved.</p>
+                        <p class="mt-1">Current Status: <span class="badge">${currentUser.verification_status}</span></p>
+                    </div>
+                `;
+            }
+
+            // Defaults
+            document.getElementById('course-instructor').value = currentUser.full_name;
+
+            const loadCourses = async () => {
+                const courseList = document.getElementById('my-courses-list');
+                try {
+                    const courses = await api.courses.getMyCreated();
+                    courseList.innerHTML = '';
+                    
+                    if (courses.length === 0) {
+                        courseList.innerHTML = '<p class="text-center w-100 text-muted">You have not created any courses yet.</p>';
+                        return;
+                    }
+
+                    courses.forEach(c => {
+                        const card = document.createElement('div');
+                        card.className = 'glass-panel course-card';
+                        card.style.background = 'rgba(0,0,0,0.2)'; // slightly darker inner panel
+                        card.innerHTML = `
+                            <div class="flex-between">
+                                <h3>${c.title}</h3>
+                                <span class="price">$${c.price}</span>
+                            </div>
+                            <p>${c.description.substring(0,80)}...</p>
+                            <div class="mt-1">
+                                <a href="/course.html?id=${c.id}" class="btn" style="padding: 0.5rem 1rem; font-size: 0.9rem;">Manage Content & Students</a>
+                            </div>
+                        `;
+                        courseList.appendChild(card);
+                    });
+                } catch (err) {
+                    courseList.innerHTML = '<p class="text-danger w-100 text-center">Failed to load local courses</p>';
+                }
+            };
+
+            await loadCourses();
+
+            // Create Course Handler
+            document.getElementById('create-course-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const btn = document.getElementById('submit-course');
+                btn.disabled = true;
+                btn.textContent = 'Publishing...';
+
+                const courseData = {
+                    title: document.getElementById('course-title').value,
+                    instructor: document.getElementById('course-instructor').value,
+                    duration: document.getElementById('course-duration').value,
+                    price: parseFloat(document.getElementById('course-price').value),
+                    description: document.getElementById('course-desc').value
+                };
+
+                try {
+                    await api.courses.create(courseData);
+                    showToast('Course published successfully!', 'success');
+                    e.target.reset();
+                    document.getElementById('course-instructor').value = currentUser.full_name;
+                    await loadCourses();
+                } catch (error) {
+                    showToast(error.message, 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = 'Publish Course';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

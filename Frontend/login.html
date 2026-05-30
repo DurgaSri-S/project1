@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Learning | Authentication</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header>
+        <a href="/" class="logo">NexusTech</a>
+        <nav>
+            <a href="/">Courses</a>
+            <a href="/login.html" id="nav-login" class="hidden">Sign In</a>
+            <a href="/login.html?mode=register" id="nav-register" class="hidden">Register</a>
+            <a href="/tutor.html" id="nav-tutor" class="hidden">Tutor Portal</a>
+        </nav>
+    </header>
+
+    <div class="container animate-slide-up">
+        <div class="auth-container glass-panel">
+            <h2 id="auth-title" class="text-center mb-1">Sign In</h2>
+            
+            <form id="auth-form">
+                <div id="name-group" class="form-group hidden">
+                    <label for="fullName">Full Name</label>
+                    <input type="text" id="fullName" placeholder="John Doe">
+                </div>
+                <div id="role-group" class="form-group hidden">
+                    <label for="role">Register as</label>
+                    <select id="role" style="width: 100%; padding: 0.8rem; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: white; border-radius: 8px;">
+                        <option value="student">Student</option>
+                        <option value="tutor">Tutor</option>
+                    </select>
+                </div>
+                <div id="verify-group" class="form-group hidden">
+                    <div id="aadhar-input" class="mb-1">
+                        <label>Aadhar Card (Required)</label>
+                        <input type="file" id="aadhar-file" accept="image/*,.pdf">
+                    </div>
+                    <div id="degree-input" class="mb-1">
+                        <label>Degree Certificate (Required)</label>
+                        <input type="file" id="degree-file" accept="image/*,.pdf">
+                    </div>
+                    <div id="skill-input" class="mb-1">
+                        <label>Skill Certificate (Required)</label>
+                        <input type="file" id="skill-file" accept="image/*,.pdf">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" required placeholder="you@example.com">
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn" style="width: 100%" id="submit-btn">Sign In</button>
+            </form>
+            
+            <p class="text-center mt-2" style="font-size: 0.9rem;">
+                <span id="toggle-text">Don't have an account?</span> 
+                <a href="#" id="toggle-mode" style="color: var(--accent); text-decoration: none; font-weight: 600;">Register</a>
+            </p>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/main.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            let isRegisterMode = urlParams.get('mode') === 'register';
+
+            const form = document.getElementById('auth-form');
+            const title = document.getElementById('auth-title');
+            const nameGroup = document.getElementById('name-group');
+            const toggleModeBtn = document.getElementById('toggle-mode');
+            const toggleText = document.getElementById('toggle-text');
+            const submitBtn = document.getElementById('submit-btn');
+
+            const updateUI = () => {
+                if (isRegisterMode) {
+                    title.textContent = 'Create Account';
+                    nameGroup.classList.remove('hidden');
+                    document.getElementById('role-group').classList.remove('hidden');
+                    document.getElementById('fullName').required = true;
+                    submitBtn.textContent = 'Register';
+                    toggleText.textContent = 'Already have an account?';
+                    toggleModeBtn.textContent = 'Sign In';
+                    
+                    // Show verify fields only for tutor role by default or upon selection
+                    const role = document.getElementById('role').value;
+                    if (role === 'tutor') {
+                        document.getElementById('verify-group').classList.remove('hidden');
+                    } else {
+                        document.getElementById('verify-group').classList.add('hidden');
+                    }
+                } else {
+                    title.textContent = 'Sign In';
+                    nameGroup.classList.add('hidden');
+                    document.getElementById('role-group').classList.add('hidden');
+                    document.getElementById('verify-group').classList.add('hidden');
+                    document.getElementById('fullName').required = false;
+                    submitBtn.textContent = 'Sign In';
+                    toggleText.textContent = "Don't have an account?";
+                    toggleModeBtn.textContent = 'Register';
+                }
+            };
+
+            document.getElementById('role').addEventListener('change', (e) => {
+                if (e.target.value === 'tutor') {
+                    document.getElementById('verify-group').classList.remove('hidden');
+                } else {
+                    document.getElementById('verify-group').classList.add('hidden');
+                }
+            });
+
+            toggleModeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                isRegisterMode = !isRegisterMode;
+                updateUI();
+            });
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Processing...';
+
+                const email = document.getElementById('email').value;
+                const password = document.getElementById('password').value;
+                const fullName = document.getElementById('fullName').value;
+                const role = document.getElementById('role').value;
+                const aadharFile = document.getElementById('aadhar-file').files[0];
+                const degreeFile = document.getElementById('degree-file').files[0];
+                const skillFile = document.getElementById('skill-file').files[0];
+
+                try {
+                    if (isRegisterMode) {
+                        // Client-side validation for Tutors
+                        if (role === 'tutor') {
+                            if (!aadharFile || !degreeFile || !skillFile) {
+                                throw new Error('Aadhar Card, Degree Certificate, and Skill Certificate are all required.');
+                            }
+                        }
+
+                        // First register the user with role
+                        await api.auth.register(email, fullName, password, role);
+                        
+                        // Then login to get token for upload
+                        const data = await api.auth.login(email, password);
+                        localStorage.setItem('token', data.access_token);
+                        
+                        // Upload verification docs
+                        if (aadharFile || degreeFile || skillFile) {
+                            try {
+                                await api.users.uploadVerification(aadharFile, degreeFile, skillFile);
+                                showToast('Registration and verification submission successful!', 'success');
+                            } catch (uploadError) {
+                                showToast('Account created, but document upload failed: ' + uploadError.message + '. Please log in and try again from your dashboard.', 'warning');
+                                // We still redirect or allow them to stay? 
+                                // Actually, if they are registered and logged in, redirecting to home is fine, 
+                                // but the warning tells them it's incomplete.
+                            }
+                        } else {
+                            showToast('Registration successful!', 'success');
+                        }
+                    } else {
+                        const data = await api.auth.login(email, password);
+                        localStorage.setItem('token', data.access_token);
+                        showToast('Login successful!', 'success');
+                    }
+                    
+                    // Redirect to dashboard or home
+                    setTimeout(() => window.location.href = '/', 1500);
+                } catch (error) {
+                    showToast(error.message, 'error');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = isRegisterMode ? 'Register' : 'Sign In';
+                }
+            });
+
+            updateUI();
+        });
+    </script>
+</body>
+</html>

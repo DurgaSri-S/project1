@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Learning | Discover Premium Courses</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header>
+        <a href="/" class="logo">NexusTech</a>
+        <nav>
+            <a href="/">Courses</a>
+            <a href="/login.html" id="nav-login">Sign In</a>
+            <a href="/login.html?mode=register" id="nav-register">Register</a>
+            <a href="/dashboard.html" id="nav-dashboard" class="hidden">My Dashboard</a>
+            <a href="/tutor.html" id="nav-tutor" class="hidden">Tutor Portal</a>
+            <a href="/admin.html" id="nav-admin" class="hidden">Admin Portal</a>
+            <a href="#" id="nav-logout" class="hidden">Log Out</a>
+        </nav>
+    </header>
+
+    <div class="container animate-slide-up">
+        <section class="hero glass-panel">
+            <h1>Elevate Your Skills.</h1>
+            <p>Join world-class instructors from global tech leaders. Learn modern full-stack development, cloud architecture, and UI/UX design in an immersive environment.</p>
+            <a href="#courses-section" class="btn">Explore Catalog</a>
+        </section>
+
+        <section id="courses-section" class="mt-2 animate-slide-up delay-1">
+            <h2 class="text-center">Available Programs</h2>
+            <div class="grid" id="course-list">
+                <!-- Courses will be loaded dynamically -->
+                <p class="text-center w-100">Loading premium courses...</p>
+            </div>
+        </section>
+    </div>
+
+    <div id="toast"></div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/main.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const courseList = document.getElementById('course-list');
+            try {
+                const courses = await api.courses.getAll();
+                courseList.innerHTML = '';
+                
+                if (courses.length === 0) {
+                    courseList.innerHTML = '<p class="text-muted" style="grid-column: 1/-1; text-align: center;">No courses currently available. Please check back later.</p>';
+                }
+
+                courses.forEach(c => {
+                    const card = document.createElement('div');
+                    card.className = 'glass-panel course-card';
+                    card.innerHTML = `
+                        <h3>${c.title}</h3>
+                        <div class="instructor">by ${c.instructor}</div>
+                        <p>${c.description}</p>
+                        <div class="meta">
+                            <span>⏱️ ${c.duration}</span>
+                            <span class="price">$${c.price}</span>
+                        </div>
+                        <button class="btn book-btn" data-id="${c.id}">Enroll Now</button>
+                    `;
+                    courseList.appendChild(card);
+                });
+
+                // State for payment modal
+                let pendingCourse = null;
+                let activeEnrollBtn = null;
+
+                // Attach event listeners
+                document.querySelectorAll('.book-btn').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        if (!currentUser) {
+                            showToast('Please log in to enroll', 'error');
+                            setTimeout(() => window.location.href = '/login.html', 1500);
+                            return;
+                        }
+                        
+                        const courseId = e.target.getAttribute('data-id');
+                        const course = courses.find(c => c.id == courseId);
+                        
+                        // Show modal
+                        pendingCourse = course;
+                        activeEnrollBtn = e.target;
+                        document.getElementById('payment-course-title').textContent = course.title;
+                        document.getElementById('payment-amount').textContent = course.price;
+                        document.getElementById('payment-modal').classList.remove('hidden');
+                    });
+                });
+
+                document.getElementById('cancel-payment-btn').addEventListener('click', () => {
+                    document.getElementById('payment-modal').classList.add('hidden');
+                    pendingCourse = null;
+                    activeEnrollBtn = null;
+                });
+
+                document.getElementById('payment-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    if(!pendingCourse) return;
+
+                    const payBtn = document.getElementById('confirm-payment-btn');
+                    payBtn.disabled = true;
+                    payBtn.textContent = 'Processing...';
+
+                    try {
+                        const booking = await api.bookings.create(pendingCourse.id);
+                        await api.payments.enroll(booking.id, pendingCourse.price);
+                        
+                        showToast('Enrolled successfully!', 'success');
+                        
+                        document.getElementById('payment-modal').classList.add('hidden');
+                        if (activeEnrollBtn) {
+                            activeEnrollBtn.textContent = 'Enrolled ✓';
+                            activeEnrollBtn.disabled = true;
+                        }
+                    } catch(err) {
+                        showToast(err.message || 'Payment failed', 'error');
+                    } finally {
+                        payBtn.disabled = false;
+                        payBtn.textContent = `Pay $${pendingCourse.price}`;
+                        document.getElementById('payment-form').reset();
+                    }
+                });
+
+            } catch (err) {
+                courseList.innerHTML = '<p class="text-danger">Failed to load courses. Please make sure the server is running.</p>';
+            }
+        });
+    </script>
+
+    <!-- Payment Modal (Moved outside container to avoid transform issues) -->
+    <div id="payment-modal" class="hidden" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10000; display:flex; align-items:center; justify-content:center;">
+        <div class="glass-panel" style="width:100%; max-width:400px; padding:2rem; position: relative;">
+            <h2>Complete Enrollment</h2>
+            <p id="payment-course-title" class="text-muted" style="margin-bottom:1rem;"></p>
+            
+            <form id="payment-form">
+                <div class="form-group mb-1">
+                    <label>Card Number</label>
+                    <input type="text" placeholder="XXXX XXXX XXXX XXXX" required>
+                </div>
+                <div class="form-group mb-1" style="display:flex; gap:1rem;">
+                    <div style="flex:1;">
+                        <label>Expiry</label>
+                        <input type="text" placeholder="MM/YY" required>
+                    </div>
+                    <div style="flex:1;">
+                        <label>CVC</label>
+                        <input type="text" placeholder="123" required>
+                    </div>
+                </div>
+                <div style="display:flex; gap:1rem; margin-top:2rem;">
+                    <button type="button" class="btn btn-secondary" id="cancel-payment-btn" style="flex:1;">Cancel</button>
+                    <button type="submit" class="btn" id="confirm-payment-btn" style="flex:1;">Pay $<span id="payment-amount"></span></button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

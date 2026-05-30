@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Learning | Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header>
+        <a href="/" class="logo">NexusTech</a>
+        <nav>
+            <a href="/">Courses</a>
+            <a href="/login.html" id="nav-login" class="hidden">Sign In</a>
+            <a href="/login.html?mode=register" id="nav-register" class="hidden">Register</a>
+            <a href="/dashboard.html" id="nav-dashboard" class="hidden">My Dashboard</a>
+            <a href="/tutor.html" id="nav-tutor" class="hidden">Tutor Portal</a>
+            <a href="/admin.html" id="nav-admin" class="hidden">Admin Portal</a>
+            <a href="#" id="nav-logout" class="hidden">Log Out</a>
+        </nav>
+    </header>
+
+    <div class="container animate-slide-up">
+        <div class="glass-panel text-center mb-1">
+            <h1 id="welcome-msg">Welcome to your Dashboard</h1>
+            <p class="text-muted">Here are the premium courses you are enrolled in.</p>
+            
+            <div id="verification-panel" class="mt-1 p-1" style="background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid var(--glass-border);">
+                <h3 id="panel-title" style="font-size: 1rem;">Account Status</h3>
+                <p id="verification-status" style="font-size: 0.9rem;">Status: <span id="v-status">Loading...</span></p>
+                
+                <div id="tutor-apply-section" class="hidden mt-1">
+                    <p style="font-size: 0.9rem; color: var(--accent);" class="mb-1"><strong>Ready to Teach?</strong> Apply to become a Tutor!</p>
+                    <div style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+                        <div class="form-group" style="flex:1; min-width: 200px;">
+                            <label style="font-size: 0.8rem;">Aadhar Card</label>
+                            <input type="file" id="dash-aadhar-file" style="font-size: 0.8rem;">
+                        </div>
+                        <div class="form-group" style="flex:1; min-width: 200px;">
+                            <label style="font-size: 0.8rem;">Degree Certificate</label>
+                            <input type="file" id="dash-degree-file" style="font-size: 0.8rem;">
+                        </div>
+                        <button id="dash-v-submit" class="btn" style="padding: 0.5rem 1rem; font-size: 0.8rem;">Submit Application</button>
+                    </div>
+                </div>
+
+                <div id="v-upload-form" class="hidden mt-1">
+                    <p style="font-size: 0.8rem;" class="mb-1">Tutors must upload documents for authentication.</p>
+                    <div style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+                        <div class="form-group" style="flex:1; min-width: 200px;">
+                            <label style="font-size: 0.8rem;">Aadhar Card</label>
+                            <input type="file" id="tutor-aadhar-file" style="font-size: 0.8rem;">
+                        </div>
+                        <div class="form-group" style="flex:1; min-width: 200px;">
+                            <label style="font-size: 0.8rem;">Degree Certificate</label>
+                            <input type="file" id="tutor-degree-file" style="font-size: 0.8rem;">
+                        </div>
+                        <button id="tutor-v-submit" class="btn" style="padding: 0.5rem 1rem; font-size: 0.8rem;">Upload & Verify</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid" id="my-bookings-list">
+            <p class="text-center w-100">Loading your enrollments...</p>
+        </div>
+
+        <div class="glass-panel mt-2">
+            <h2 class="mb-1">Your Assignments</h2>
+            <div id="assignments-summary">
+                <p class="text-muted">Loading assignments for your enrolled courses...</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <!-- Payment Modal -->
+    <div id="payment-modal" class="hidden" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10000; display:flex; align-items:center; justify-content:center;">
+        <div class="glass-panel" style="width:100%; max-width:400px; padding:2rem; position: relative;">
+            <h2>Complete Payment</h2>
+            <p id="payment-course-title" class="text-muted" style="margin-bottom:1rem;"></p>
+            
+            <form id="payment-form">
+                <div class="form-group mb-1">
+                    <label>Card Number</label>
+                    <input type="text" placeholder="XXXX XXXX XXXX XXXX" required>
+                </div>
+                <div class="form-group mb-1" style="display:flex; gap:1rem;">
+                    <div style="flex:1;">
+                        <label>Expiry</label>
+                        <input type="text" placeholder="MM/YY" required>
+                    </div>
+                    <div style="flex:1;">
+                        <label>CVC</label>
+                        <input type="text" placeholder="123" required>
+                    </div>
+                </div>
+                <div style="display:flex; gap:1rem; margin-top:2rem;">
+                    <button type="button" class="btn btn-secondary" id="cancel-payment-btn" style="flex:1;">Cancel</button>
+                    <button type="submit" class="btn" id="confirm-payment-btn" style="flex:1;">Pay $<span id="payment-amount"></span></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/main.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Wait for auth check to finish
+            await checkAuth();
+            
+            if (!currentUser) {
+                window.location.href = '/login.html';
+                return;
+            }
+            
+            if (currentUser.is_admin) {
+                window.location.href = '/admin.html';
+                return;
+            }
+
+            document.getElementById('welcome-msg').textContent = `Welcome, ${currentUser.full_name}`;
+
+            // Verification Logic
+            const vStatus = document.getElementById('v-status');
+            const vUploadForm = document.getElementById('v-upload-form');
+            const tutorApply = document.getElementById('tutor-apply-section');
+            const status = currentUser.verification_status.toUpperCase();
+            
+            vStatus.textContent = status;
+            vStatus.style.fontWeight = 'bold';
+            
+            if (currentUser.verification_status === 'pending') vStatus.style.color = '#fbbf24';
+            else if (currentUser.verification_status === 'approved') vStatus.style.color = '#10b981';
+            else if (currentUser.verification_status === 'rejected') vStatus.style.color = '#ef4444';
+            else if (currentUser.verification_status === 'unverified') vStatus.style.color = '#9ca3af';
+
+            if (currentUser.role === 'student') {
+                document.getElementById('panel-title').textContent = 'Student Status';
+                if (currentUser.verification_status === 'approved') {
+                    vStatus.textContent = 'VERIFIED STUDENT';
+                    tutorApply.classList.remove('hidden');
+                } else if (currentUser.verification_status === 'pending') {
+                    vStatus.textContent = 'TUTOR APPLICATION PENDING';
+                    tutorApply.classList.add('hidden');
+                }
+            } else if (currentUser.role === 'tutor') {
+                document.getElementById('panel-title').textContent = 'Tutor Authentication';
+                if (currentUser.verification_status !== 'approved') {
+                    vUploadForm.classList.remove('hidden');
+                }
+            }
+
+            // Application for Student -> Tutor
+            document.getElementById('dash-v-submit').addEventListener('click', async () => {
+                const aadhar = document.getElementById('dash-aadhar-file').files[0];
+                const degree = document.getElementById('dash-degree-file').files[0];
+                if (!aadhar || !degree) return showToast('Aadhar and Degree are required for Tutor application', 'error');
+                
+                try {
+                    document.getElementById('dash-v-submit').disabled = true;
+                    await api.users.uploadVerification(aadhar, degree);
+                    showToast('Application submitted! Admin will review your documents.', 'success');
+                    vStatus.textContent = 'TUTOR APPLICATION PENDING';
+                    vStatus.style.color = '#fbbf24';
+                    tutorApply.classList.add('hidden');
+                } catch (err) {
+                    showToast(err.message, 'error');
+                    document.getElementById('dash-v-submit').disabled = false;
+                }
+            });
+
+            // Verification for existing Tutor
+            document.getElementById('tutor-v-submit').addEventListener('click', async () => {
+                const aadhar = document.getElementById('tutor-aadhar-file').files[0];
+                const degree = document.getElementById('tutor-degree-file').files[0];
+                if (!aadhar || !degree) return showToast('Aadhar and Degree are required', 'error');
+                
+                try {
+                    document.getElementById('tutor-v-submit').disabled = true;
+                    await api.users.uploadVerification(aadhar, degree);
+                    showToast('Documents uploaded! Status set to PENDING.', 'success');
+                    vStatus.textContent = 'PENDING';
+                    vStatus.style.color = '#fbbf24';
+                    vUploadForm.classList.add('hidden');
+                } catch (err) {
+                    showToast(err.message, 'error');
+                    document.getElementById('tutor-v-submit').disabled = false;
+                }
+            });
+
+            const bookingsList = document.getElementById('my-bookings-list');
+            try {
+                const bookings = await api.bookings.getMy();
+                bookingsList.innerHTML = '';
+                
+                if (bookings.length === 0) {
+                    bookingsList.innerHTML = `
+                        <div class="glass-panel text-center" style="grid-column: 1/-1;">
+                            <h3>No courses yet</h3>
+                            <p class="text-muted mb-1">You haven't enrolled in any courses yet.</p>
+                            <a href="/" class="btn">Browse Courses</a>
+                        </div>
+                    `;
+                }
+
+                bookings.forEach(b => {
+                    const card = document.createElement('div');
+                    card.className = 'glass-panel course-card';
+                    const isPaid = b.payment_status === 'paid';
+                    
+                    card.innerHTML = `
+                        <div class="flex-between">
+                            <h3>${b.course.title}</h3>
+                            <span class="price">$${b.course.price}</span>
+                        </div>
+                        <div class="instructor">by ${b.course.instructor}</div>
+                        <p>${b.course.description.substring(0, 100)}...</p>
+                        <div class="meta">
+                            <span>📅 ${new Date(b.booking_date).toLocaleDateString()}</span>
+                            <span class="status-${b.payment_status.toLowerCase()}">${b.payment_status.toUpperCase()}</span>
+                        </div>
+                        <div style="display:flex; gap:0.5rem; flex-direction:column;">
+                            ${!isPaid ? `<button class="btn pay-now-btn" data-id="${b.id}" data-course-id="${b.course.id}" data-title="${b.course.title}" data-price="${b.course.price}">Pay Course Fee ($${b.course.price})</button>` : ''}
+                            <a href="/course.html?id=${b.course.id}" class="btn btn-secondary" style="text-align:center;">View Course & Assignments</a>
+                        </div>
+                    `;
+                    bookingsList.appendChild(card);
+                });
+
+                // PAYMENT MODAL LOGIC FOR DASHBOARD
+                let pendingBookingId = null;
+                let pendingCoursePrice = null;
+                let activePayBtn = null;
+
+                document.querySelectorAll('.pay-now-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        pendingBookingId = e.target.getAttribute('data-id');
+                        pendingCoursePrice = e.target.getAttribute('data-price');
+                        activePayBtn = e.target;
+                        
+                        document.getElementById('payment-course-title').textContent = e.target.getAttribute('data-title');
+                        document.getElementById('payment-amount').textContent = pendingCoursePrice;
+                        document.getElementById('payment-modal').classList.remove('hidden');
+                    });
+                });
+
+                document.getElementById('cancel-payment-btn').addEventListener('click', () => {
+                    document.getElementById('payment-modal').classList.add('hidden');
+                });
+
+                document.getElementById('payment-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const payBtn = document.getElementById('confirm-payment-btn');
+                    payBtn.disabled = true;
+                    payBtn.textContent = 'Processing...';
+
+                    try {
+                        await api.payments.enroll(pendingBookingId, pendingCoursePrice);
+                        showToast('Payment Successful!', 'success');
+                        document.getElementById('payment-modal').classList.add('hidden');
+                        if (activePayBtn) {
+                            const cardMeta = activePayBtn.parentElement.previousElementSibling.querySelector('span:last-child');
+                            cardMeta.textContent = 'PAID';
+                            cardMeta.className = 'status-paid';
+                            activePayBtn.remove();
+                        }
+                        // Refresh assignments in case they were locked
+                        await loadAssignments(); 
+                    } catch(err) {
+                        showToast(err.message, 'error');
+                    } finally {
+                        payBtn.disabled = false;
+                        payBtn.textContent = `Pay $${pendingCoursePrice}`;
+                    }
+                });
+
+                const assSummary = document.getElementById('assignments-summary');
+
+                // LOAD ASSIGNMENTS SUMMARY
+                const loadAssignments = async () => {
+                    assSummary.innerHTML = '';
+                    if (bookings.length === 0) {
+                        assSummary.innerHTML = '<p class="text-muted">Enroll in a course to see assignments.</p>';
+                    } else {
+                        let hasAssignments = false;
+                        for (const b of bookings) {
+                            try {
+                                const courseAssigns = await api.assignments.getForCourse(b.course.id);
+                                if (courseAssigns.length > 0) {
+                                    hasAssignments = true;
+                                    courseAssigns.forEach(a => {
+                                        const item = document.createElement('div');
+                                        item.className = 'glass-panel mb-1';
+                                        item.style.background = 'rgba(255,255,255,0.05)';
+                                        item.innerHTML = `
+                                            <div class="flex-between">
+                                                <div>
+                                                    <h4 style="color:var(--accent);">${a.title}</h4>
+                                                    <small class="text-muted">Course: ${b.course.title}</small>
+                                                </div>
+                                                <a href="/course.html?id=${b.course.id}" class="btn btn-secondary" style="padding:0.4rem 0.8rem; font-size:0.8rem;">Go to Assignment</a>
+                                            </div>
+                                        `;
+                                        assSummary.appendChild(item);
+                                    });
+                                }
+                            } catch (e) { console.error("Error loading assignments for course", b.course.id, e); }
+                        }
+                        if (!hasAssignments) {
+                            assSummary.innerHTML = '<p class="text-muted">No assignments posted for your courses yet.</p>';
+                        }
+                    }
+                };
+                
+                await loadAssignments();
+
+            } catch (err) {
+                bookingsList.innerHTML = '<p class="text-danger">Failed to load bookings. Please check your connection.</p>';
+                document.getElementById('assignments-summary').innerHTML = '<p class="text-danger">Failed to load assignments.</p>';
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusTech | Admin Portal</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header>
+        <a href="/" class="logo">NexusTech Admin</a>
+        <nav>
+            <a href="/">View Site</a>
+            <a href="/dashboard.html" id="nav-dashboard" class="hidden">My Dashboard</a>
+            <a href="/tutor.html" id="nav-tutor" class="hidden">Tutor Portal</a>
+            <a href="/admin.html" id="nav-admin" class="hidden">Admin Portal</a>
+            <a href="#" id="nav-logout" class="hidden">Log Out</a>
+        </nav>
+    </header>
+
+    <div class="container animate-slide-up">
+        <div class="glass-panel text-center mb-1">
+            <h1>System Administration</h1>
+            <p class="text-muted">Manage Users and Platform Settings</p>
+        </div>
+
+        <div class="glass-panel mb-1" style="overflow-x: auto;">
+            <h2 class="mb-1">User Management</h2>
+            <table id="users-table" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Verification</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="6" class="text-center">Loading users...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="glass-panel mb-1" style="overflow-x: auto;">
+            <h2 class="mb-1">Platform Revenue</h2>
+            <div style="max-width: 800px; margin: 0 auto;">
+                <h3>Student Revenue</h3>
+                <table id="revenue-table" style="width: 100%;">
+                    <thead><tr><th>ID</th><th>Student</th><th>Course</th><th>Amount</th><th>Date</th></tr></thead>
+                    <tbody><tr><td colspan="5">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="review-modal" class="hidden" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:flex; justify-content:center; align-items:center; z-index:1000;">
+            <div class="glass-panel" style="max-width:500px; width:90%; padding:2rem;">
+                <h2 class="mb-1">Review User Documents</h2>
+                <div id="review-docs-list" class="mb-2">
+                    <!-- Links will go here -->
+                </div>
+                <div style="display:flex; gap:1rem; justify-content:flex-end;">
+                    <button id="modal-approve-btn" class="btn btn-secondary">Approve & Promote</button>
+                    <button id="modal-reject-btn" class="btn btn-danger">Reject</button>
+                    <button id="modal-close-btn" class="btn">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/main.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            await checkAuth();
+            if (!currentUser || currentUser.role !== 'admin') {
+                showToast('Unauthorized access', 'error');
+                setTimeout(() => window.location.href = '/', 1500);
+                return;
+            }
+
+            let selectedUserId = null;
+
+            const loadUsers = async () => {
+                const tbody = document.querySelector('#users-table tbody');
+                try {
+                    const users = await api.users.getAll();
+                    tbody.innerHTML = '';
+                    
+                    if(users.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" class="text-center">No users found.</td></tr>';
+                        return;
+                    }
+
+                    users.forEach(u => {
+                        if (u.role === 'admin') return;
+                        const tr = document.createElement('tr');
+                        
+                        let actionHtml = '<div style="display:flex; gap:0.5rem; flex-wrap:wrap;">';
+                        
+                        const hasDocs = u.aadhar_path || u.degree_path || u.skill_certificate_path;
+                        
+                        if (u.role === 'student') {
+                            if (u.verification_status === 'pending' || hasDocs) {
+                                actionHtml += `<button class="btn btn-secondary review-btn" data-id="${u.id}" data-role="${u.role}" data-aadhar="${u.aadhar_path || ''}" data-degree="${u.degree_path || ''}" data-skill="${u.skill_certificate_path || ''}">Review & Promote</button>`;
+                            } else {
+                                actionHtml += `<button class="btn btn-secondary promote-btn" data-id="${u.id}">Promote to Tutor</button>`;
+                            }
+                        } else if (u.role === 'tutor') {
+                            if (u.verification_status === 'pending' || hasDocs) {
+                                actionHtml += `<button class="btn btn-secondary review-btn" data-id="${u.id}" data-role="${u.role}" data-aadhar="${u.aadhar_path || ''}" data-degree="${u.degree_path || ''}" data-skill="${u.skill_certificate_path || ''}">Review & Verify</button>`;
+                            } else if (u.verification_status !== 'approved') {
+                                actionHtml += `<button class="btn btn-danger demote-btn" data-id="${u.id}">Demote to Student</button>`;
+                            }
+                        }
+
+                        actionHtml += `<button class="btn btn-danger delete-btn" data-id="${u.id}" style="background:#dc2626;">Remove</button>`;
+                        actionHtml += '</div>';
+
+                        const statusColors = {
+                            'pending': '#fbbf24',
+                            'approved': '#10b981',
+                            'rejected': '#ef4444',
+                            'unverified': '#9ca3af'
+                        };
+
+                        const statusLabels = {
+                            'approved': u.role === 'student' ? 'VERIFIED' : 'AUTHENTICATED',
+                            'pending': 'PENDING REVIEW',
+                            'unverified': hasDocs ? 'DOCS UPLOADED' : 'DOCS REQUIRED',
+                            'rejected': 'REJECTED'
+                        };
+
+                        tr.innerHTML = `
+                            <td>#${u.id}</td>
+                            <td>${u.full_name}</td>
+                            <td>${u.email}</td>
+                            <td><strong>${u.role.toUpperCase()}</strong></td>
+                            <td style="color:${u.verification_status === 'unverified' && hasDocs ? '#fbbf24' : (statusColors[u.verification_status] || 'white')}; font-weight:bold;">${statusLabels[u.verification_status] || u.verification_status.toUpperCase()}</td>
+                            <td>${actionHtml}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+
+                    // Review Modal Logic
+                    document.querySelectorAll('.review-btn').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            selectedUserId = e.target.getAttribute('data-id');
+                            const role = e.target.getAttribute('data-role');
+                            const aadhar = e.target.getAttribute('data-aadhar');
+                            const degree = e.target.getAttribute('data-degree');
+                            const skill = e.target.getAttribute('data-skill');
+                            
+                            const docsList = document.getElementById('review-docs-list');
+                            docsList.innerHTML = '';
+                            
+                            if (aadhar) docsList.innerHTML += `<p><strong>Aadhar Card:</strong> <a href="${aadhar}" target="_blank" style="color:var(--accent)">View Document</a></p>`;
+                            else docsList.innerHTML += `<p class="text-muted">No Aadhar uploaded</p>`;
+                            
+                            if (role === 'tutor' || role === 'student') {
+                                if (degree) docsList.innerHTML += `<p class="mt-1"><strong>Degree Certificate:</strong> <a href="${degree}" target="_blank" style="color:var(--accent)">View Document</a></p>`;
+                                else if (role === 'tutor') docsList.innerHTML += `<p class="text-muted mt-1">No Degree uploaded</p>`;
+                            }
+
+                            if (skill) {
+                                docsList.innerHTML += `<p class="mt-1"><strong>Skill Certificate:</strong> <a href="${skill}" target="_blank" style="color:var(--accent)">View Document</a></p>`;
+                            } else if (role === 'tutor') {
+                                docsList.innerHTML += `<p class="text-muted mt-1">No Skill Certificate uploaded</p>`;
+                            }
+
+                            document.getElementById('modal-approve-btn').textContent = (role === 'student' ? 'Approve & Promote' : 'Approve');
+                            document.getElementById('review-modal').classList.remove('hidden');
+                        });
+                    });
+
+                    document.querySelectorAll('.promote-btn').forEach(btn => {
+                        btn.addEventListener('click', async (e) => {
+                            const id = e.target.getAttribute('data-id');
+                            if(!confirm('Promote this student to Tutor directly?')) return;
+                            await api.users.updateRole(id, 'tutor');
+                            showToast('User promoted to Tutor', 'success');
+                            loadUsers();
+                        });
+                    });
+
+                    document.querySelectorAll('.demote-btn').forEach(btn => {
+                        btn.addEventListener('click', async (e) => {
+                            const id = e.target.getAttribute('data-id');
+                            await api.users.updateRole(id, 'student');
+                            showToast('User demoted to Student', 'success');
+                            loadUsers();
+                        });
+                    });
+
+                    document.querySelectorAll('.delete-btn').forEach(btn => {
+                        btn.addEventListener('click', async (e) => {
+                            if(!confirm('Are you sure you want to remove this user? This will delete all their data.')) return;
+                            const id = e.target.getAttribute('data-id');
+                            await api.users.delete(id);
+                            showToast('User removed successfully', 'success');
+                            loadUsers();
+                        });
+                    });
+
+                } catch (err) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-danger text-center">Failed to load users</td></tr>';
+                }
+            };
+
+            // Modal Event Listeners
+            document.getElementById('modal-close-btn').addEventListener('click', () => {
+                document.getElementById('review-modal').classList.add('hidden');
+            });
+
+            document.getElementById('modal-approve-btn').addEventListener('click', async () => {
+                if (!selectedUserId) return;
+                try {
+                    await api.users.approveVerification(selectedUserId);
+                    // Also promote if they are student
+                    const users = await api.users.getAll();
+                    const user = users.find(u => u.id == selectedUserId);
+                    if (user && user.role === 'student') {
+                        await api.users.updateRole(selectedUserId, 'tutor');
+                    }
+                    showToast('Approved successfully!', 'success');
+                    document.getElementById('review-modal').classList.add('hidden');
+                    loadUsers();
+                } catch (err) {
+                    showToast(err.message, 'error');
+                }
+            });
+
+            document.getElementById('modal-reject-btn').addEventListener('click', async () => {
+                if (!selectedUserId) return;
+                try {
+                    await api.users.rejectVerification(selectedUserId);
+                    showToast('Rejected', 'error');
+                    document.getElementById('review-modal').classList.add('hidden');
+                    loadUsers();
+                } catch (err) {
+                    showToast(err.message, 'error');
+                }
+            });
+
+            const loadPayments = async () => {
+                const revBody = document.querySelector('#revenue-table tbody');
+                try {
+                    const revenues = await api.payments.getRevenue();
+                    revBody.innerHTML = revenues.length ? '' : '<tr><td colspan="5" class="text-center">No revenue yet</td></tr>';
+                    revenues.forEach(r => {
+                        revBody.innerHTML += `<tr><td>#${r.id}</td><td>${r.student_name || ('Student '+r.student_id)}</td><td>${r.course_title || 'N/A'}</td><td>$${r.amount}</td><td>${new Date(r.payment_date).toLocaleDateString()}</td></tr>`;
+                    });
+                } catch(e) {
+                    revBody.innerHTML = '<tr><td colspan="4" class="text-danger">Failed to load</td></tr>';
+                }
+            };
+
+            await Promise.all([loadUsers(), loadPayments()]);
+        });
+    </script>
+</body>
+</html>
